@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  # React Client - Development
+  client-dev:
+    build:
+      context: ./budget-manager-client
+      dockerfile: Dockerfile.dev
+    container_name: budget_manager_client_dev
+    ports:
+      - "5173:5173"
+    volumes:
+      # Mount source code for hot reload
+      - ./budget-manager-client/src:/app/src
+      - ./budget-manager-client/public:/app/public
+      - ./budget-manager-client/index.html:/app/index.html
+      - ./budget-manager-client/vite.config.js:/app/vite.config.js
+      - ./budget-manager-client/package.json:/app/package.json
+      # Prevent node_modules from being overwritten
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+      - VITE_API_URL=http://localhost:8000
+    stdin_open: true
+    tty: true
+    networks:
+      - dev_network
+
+networks:
+  dev_network:
+    driver: bridge

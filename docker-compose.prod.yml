@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  # React Client - Production
+  client-prod:
+    build:
+      context: ./budget-manager-client
+      dockerfile: Dockerfile.prod
+    container_name: budget_manager_client_prod
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+    restart: always
+    networks:
+      - prod_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  prod_network:
+    driver: bridge
