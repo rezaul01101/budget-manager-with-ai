@@ -3,8 +3,8 @@ import "./App.css";
 import Header from "./components/ui/Header";
 import Footer from "./components/ui/Footer";
 import Home from "./pages/Home/Home"
-import About from "./pages/About/About";
 import Contact from "./pages/Contact/Contact";
+import About from "./pages/About/About";
 function App() {
   return (
     <BrowserRouter>
