@@ -3,6 +3,7 @@ import "./App.css";
 import Header from "./components/ui/Header";
 import Footer from "./components/ui/Footer";
 import Home from "./pages/Home/Home"
+import About from "./pages/about/About";
 function App() {
   return (
     <BrowserRouter>
@@ -11,8 +12,8 @@ function App() {
         <main>
           <Routes>
             <Route path="/" element={<Home />} />
-            {/* <Route path="/about" element={<About />} />
-            <Route path="/features" element={<FeaturesPage />} />
+            <Route path="/about" element={<About />} />
+            {/* <Route path="/features" element={<FeaturesPage />} />
             <Route path="/pricing" element={<PricingPage />} />
             <Route path="/faq" element={<FAQPage />} />
             <Route path="/contact" element={<Contact />} />
