@@ -3,8 +3,8 @@ version: "3.9"
 services:
   client:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ./budget-manager-client
+      dockerfile: Dockerfile.prod
     container_name: buildbeam-client
     ports:
       - "3000:3000"   # Expose to host
