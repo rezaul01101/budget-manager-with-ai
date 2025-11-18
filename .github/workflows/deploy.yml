@@ -7,38 +7,156 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      REMOTE_PATH: /var/www/budget-manager-with-ai
+      ARCHIVE_NAME: deploy.tar.gz
+      HEALTHCHECK_URL: http://localhost # change if your app listens on specific port
+      DOCKER_COMPOSE_FILE: docker-compose.prod.yml
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
+    # 1. Checkout repository
+    - name: 1. Checkout code
+      uses: actions/checkout@v4
 
-    - name: Clean server folder
+    # 2. Create a deploy archive (tar.gz) on the runner (excludes .git and node_modules)
+    - name: 2. Create tar archive for upload
+      run: |
+        echo "Creating archive ${ARCHIVE_NAME} (excludes .git, .github, node_modules)"
+        tar --exclude='./.git' --exclude='./.github' --exclude='./node_modules' -czf $ARCHIVE_NAME .
+
+    # 3. Verify SSH connection (quick test)
+    - name: 3. Verify SSH connection (test)
       uses: appleboy/ssh-action@v0.1.10
       with:
         host: ${{ secrets.VPS_HOST }}
         username: ${{ secrets.VPS_USER }}
         key: ${{ secrets.SSH_PRIVATE_KEY }}
         script: |
-          rm -rf /var/www/budget-manager-with-ai/*
+          echo "=== SSH CONNECTION TEST ==="
+          whoami
+          uname -a
+          echo "SSH OK"
 
-    - name: Copy project to VPS
+    # 4. Backup existing server folder (move to timestamped backup) — safer than rm -rf
+    - name: 4. Backup current server folder (remote)
+      uses: appleboy/ssh-action@v0.1.10
+      with:
+        host: ${{ secrets.VPS_HOST }}
+        username: ${{ secrets.VPS_USER }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        script: |
+          set -euo pipefail
+          TIMESTAMP=$(date +%F_%H-%M-%S)
+          if [ -d "${{ env.REMOTE_PATH }}" ]; then
+            echo "Backing up ${REMOTE_PATH} -> ${REMOTE_PATH}_backup_${TIMESTAMP}"
+            sudo mv "${REMOTE_PATH}" "${REMOTE_PATH}_backup_${TIMESTAMP}" || true
+            sudo mkdir -p "${REMOTE_PATH}"
+            sudo chown $(whoami):$(whoami) "${REMOTE_PATH}" || true
+          else
+            echo "${REMOTE_PATH} does not exist yet; creating."
+            sudo mkdir -p "${REMOTE_PATH}"
+            sudo chown $(whoami):$(whoami) "${REMOTE_PATH}" || true
+          fi
+
+    # 5. Clean server folder (remove any leftover files inside)
+    - name: 5. Clean server folder (remote)
+      uses: appleboy/ssh-action@v0.1.10
+      with:
+        host: ${{ secrets.VPS_HOST }}
+        username: ${{ secrets.VPS_USER }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        script: |
+          set -euo pipefail
+          echo "Cleaning contents of ${REMOTE_PATH}"
+          sudo rm -rf "${REMOTE_PATH:?}"/*
+
+    # 6. Upload archive to the VPS (to /tmp)
+    - name: 6. Upload archive to VPS (/tmp)
       uses: appleboy/scp-action@v0.1.4
       with:
         host: ${{ secrets.VPS_HOST }}
         username: ${{ secrets.VPS_USER }}
         key: ${{ secrets.SSH_PRIVATE_KEY }}
-        source: "."
-        target: "/var/www/budget-manager-with-ai"
+        source: "${{ env.ARCHIVE_NAME }}"
+        target: "/tmp"
 
-    - name: Deploy using Docker
+    # 7. Extract archive into target path, set permissions, and run Docker Compose (build & up)
+    - name: 7. Extract archive & Deploy with Docker Compose (remote)
       uses: appleboy/ssh-action@v0.1.10
       with:
         host: ${{ secrets.VPS_HOST }}
         username: ${{ secrets.VPS_USER }}
         key: ${{ secrets.SSH_PRIVATE_KEY }}
         script: |
-          cd /var/www/budget-manager-with-ai
-          docker compose -f docker-compose.prod.yml down || true
-          docker compose -f docker-compose.prod.yml build --no-cache
-          docker compose -f docker-compose.prod.yml up -d
-          echo "Deployment completed!"
+          set -euo pipefail
+          echo "Preparing to deploy..."
+          # ensure target exists and has correct permissions
+          sudo mkdir -p "${REMOTE_PATH}"
+          sudo chown $(whoami):$(whoami) "${REMOTE_PATH}"
+
+          # extract archive into a temporary dir then move to final path
+          TMPDIR="/tmp/deploy_extract_$(date +%s)"
+          mkdir -p "$TMPDIR"
+          tar -xzf /tmp/${ARCHIVE_NAME} -C "$TMPDIR"
+          # move files into REMOTE_PATH
+          rsync -a --delete "$TMPDIR"/ "${REMOTE_PATH}/"
+          rm -rf "$TMPDIR"
+          rm -f /tmp/${ARCHIVE_NAME}
+          echo "Files copied to ${REMOTE_PATH}"
+
+          # go to project and run docker compose commands
+          cd "${REMOTE_PATH}"
+          echo "Stopping previous containers (ignore errors)..."
+          docker compose -f ${DOCKER_COMPOSE_FILE} down || true
+
+          echo "Building images (no cache)..."
+          docker compose -f ${DOCKER_COMPOSE_FILE} build --no-cache
+
+          echo "Starting containers..."
+          docker compose -f ${DOCKER_COMPOSE_FILE} up -d
+
+          echo "Deployment commands completed."
+
+    # 8. Optional: Prune unused Docker images & dangling resources to free disk (run only if needed)
+    - name: 8. Optional: Prune unused Docker resources (remote) - use with caution
+      if: ${{ false }} # change to true to enable
+      uses: appleboy/ssh-action@v0.1.10
+      with:
+        host: ${{ secrets.VPS_HOST }}
+        username: ${{ secrets.VPS_USER }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        script: |
+          echo "Pruning unused Docker objects (images, containers, networks) - non-interactive"
+          docker system prune -af || true
+
+    # 9. Healthcheck (simple): curl the app on the VPS and fail if not 200
+    - name: 9. Healthcheck (remote)
+      uses: appleboy/ssh-action@v0.1.10
+      with:
+        host: ${{ secrets.VPS_HOST }}
+        username: ${{ secrets.VPS_USER }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        script: |
+          set -euo pipefail
+          echo "Waiting a few seconds for services to start..."
+          sleep 5
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${{ env.HEALTHCHECK_URL }}" || echo "000")
+          echo "Healthcheck status code: $HTTP_CODE"
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "Healthcheck failed (HTTP $HTTP_CODE). Showing docker compose ps and last 200 lines of logs for troubleshooting..."
+            docker compose -f ${DOCKER_COMPOSE_FILE} ps || true
+            docker compose -f ${DOCKER_COMPOSE_FILE} logs --tail=200 || true
+            exit 1
+          fi
+          echo "Healthcheck passed (HTTP 200)."
+
+    # 10. Cleanup local runner (remove archive)
+    - name: 10. Cleanup local runner
+      run: |
+        echo "Removing local archive"
+        rm -f ${{ env.ARCHIVE_NAME }} || true
+
+    # 11. Notify (optional) - print final message
+    - name: 11. Done
+      run: echo "Deployment job finished."
+
