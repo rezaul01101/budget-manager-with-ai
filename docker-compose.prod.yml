@@ -1,25 +1,19 @@
-version: '3.8'
+version: "3.9"
 
 services:
-  # React Client - Production
-  client-prod:
+  client:
     build:
-      context: ./budget-manager-client
-      dockerfile: Dockerfile.prod
-    container_name: budget_manager_client_prod
+      context: .
+      dockerfile: Dockerfile
+    container_name: buildbeam-client
     ports:
-      - "3000:3000"
+      - "3000:3000"   # Expose to host
     environment:
       - NODE_ENV=production
-    restart: always
+    restart: unless-stopped
     networks:
-      - prod_network
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
+      - buildbeam-network
 
 networks:
-  prod_network:
+  buildbeam-network:
     driver: bridge

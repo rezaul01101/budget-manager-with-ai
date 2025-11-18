@@ -5,29 +5,25 @@ WORKDIR /app
 
 # Copy package files
 COPY package*.json ./
-
-# Install dependencies
 RUN npm install
 
-# Copy source code
+# Copy project files
 COPY . .
 
-# Build the app for production
+# Build vite app
 RUN npm run build
 
-# Production stage - serve with simple http server
+# Production stage
 FROM node:24-alpine
 
 WORKDIR /app
 
-# Install serve package globally
-# RUN npm install -g serve
+# Install serve
+RUN npm install -g serve
 
-# Copy built assets from build stage (Vite builds to 'dist' folder)
+# Copy built app
 COPY --from=build /app/dist ./dist
 
-# Expose port 3000
 EXPOSE 3000
 
-# Serve the app on port 3000
 CMD ["serve", "-s", "dist", "-l", "3000"]
