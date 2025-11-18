@@ -19,7 +19,7 @@ jobs:
         username: ${{ secrets.VPS_USER }}
         key: ${{ secrets.SSH_PRIVATE_KEY }}
         script: |
-          rm -rf /var/www/budget-manager/budget-manager-with-ai/*
+          rm -rf /var/www/budget-manager-with-ai/*
 
     - name: Copy project to VPS
       uses: appleboy/scp-action@v0.1.4
@@ -28,7 +28,7 @@ jobs:
         username: ${{ secrets.VPS_USER }}
         key: ${{ secrets.SSH_PRIVATE_KEY }}
         source: "."
-        target: "/var/www/budget-manager/budget-manager-with-ai"
+        target: "/var/www/budget-manager-with-ai"
 
     - name: Deploy using Docker
       uses: appleboy/ssh-action@v0.1.10
@@ -37,7 +37,7 @@ jobs:
         username: ${{ secrets.VPS_USER }}
         key: ${{ secrets.SSH_PRIVATE_KEY }}
         script: |
-          cd /var/www/budget-manager/budget-manager-with-ai
+          cd /var/www/budget-manager-with-ai
           docker compose -f docker-compose.prod.yml down || true
           docker compose -f docker-compose.prod.yml build --no-cache
           docker compose -f docker-compose.prod.yml up -d
